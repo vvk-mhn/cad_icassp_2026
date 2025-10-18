@@ -1,0 +1,6 @@
+/configs/*
+*.tar.gz
+__pycache__/
+/baseline/*.tar.gz
+/baseline/configs/*
+/baseline/__pycache__/

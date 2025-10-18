@@ -1,0 +1,12 @@
+split: valid
+data:
+  cadenza_data_root: /Users/rahulpeter/Documents/research_work/cadenza_challenge/baseline_code
+  dataset: cadenza_data
+  sample_rate: 44100
+baseline:
+  name: songprep
+  system: songprep_wer
+  contractions_file: ${hydra:runtime.cwd}/recipes/cad_icassp_2026/baseline/contractions.csv
+  batch: 1
+  n_batches: 1
+  reference: processed
