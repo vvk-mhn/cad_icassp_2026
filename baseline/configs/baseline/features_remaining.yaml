@@ -1,0 +1,22 @@
+# configs/baseline/features_remaining.yaml
+name: features_remaining
+system: features_remaining  # Output prefix if you want to reuse in filenames
+
+# Feature switches
+use_demucs: true
+demucs_variant: htdemucs  # torch.hub model name
+use_bert_score: true
+bert_model: roberta-large
+bert_rescale_with_baseline: true
+
+# Optional ASR models (heavy; set to true only if you have them)
+use_canary: false
+canary_model_id: nvidia/canary-2b
+use_parakeet: false
+parakeet_model_id: nvidia/parakeet-ctc-1.1b
+
+# Path to contractions.csv for SentenceScorer
+contractions_file: ${hydra:runtime.cwd}/recipes/cad_icassp_2026/baseline/contractions.csv
+batch: 1
+n_batches: 1
+reference: processed

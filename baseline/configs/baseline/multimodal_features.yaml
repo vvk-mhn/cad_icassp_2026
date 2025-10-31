@@ -1,0 +1,42 @@
+# This file is configs/baseline/multimodal_features.yaml
+name: multimodal_features
+system: multimodal_features # Output file prefix
+
+# --- Part 1: Settings for compute_all_features.py ---
+
+# 1. Legacy Text Models
+whisper_version: base.en
+contractions_file: ${hydra:runtime.cwd}/recipes/cad_icassp_2026/baseline/contractions.csv
+semantic_model: all-MiniLM-L6-v2
+nli_model: cross-encoder/nli-roberta-base
+
+# 2. New Phoneme & ASR Embedding Models
+wav2vec2_phoneme_model: vitouphy/wav2vec2-xls-r-300m-timit-phoneme
+wav2vec2_robust_model: facebook/wav2vec2-large-robust
+
+llm_correction:
+  enabled: false
+  model_id: "meta-llama/Llama-3.1-8B-Instruct"
+  confidence_threshold: -0.75
+
+# 3. Standard batching
+batch: 1
+n_batches: 1
+reference: processed
+
+model_type: "lgbm"       # "lgbm" or "catboost"
+run_shap: true           # true or false
+
+# --- NEW: Gating Controls ---
+vocal_gate_alpha: 1.0    # Sigmoid slope
+vocal_gate_snr0: 0.0     # Sigmoid midpoint (in dB)
+
+
+mlp:
+  num_epochs: 200
+  learning_rate: 0.001
+  batch_size: 128 # Optional: Add if you want to configure
+  num_workers: 0 # Optional: Set > 0 for parallel loading if beneficial
+  n_pca_components: 116 # Number of PCA components to keep
+  optimization_strategy: optuna
+  n_optuna_trials: 1200

@@ -1,0 +1,18 @@
+
+name: whisperx_multi # New baseline name
+system: whisperx_multi # System name for output files
+
+# --- WhisperX Specific Settings ---
+whisper_version: "base.en" # Whisper model size (e.g., "base.en", "small.en", "large-v2")
+compute_type: "float16" # "float16" for GPU, "int8" for CPU/low VRAM GPU
+whisperx_batch_size: 16 # Batch size for WhisperX transcription
+
+n_samples: 20           # <<< Number of times to run transcription
+temperature: 0.6        # <<< Temperature for sampling (0.0 is deterministic)
+
+# --- Shared Settings (from original config) ---
+contractions_file: ${hydra:runtime.cwd}/recipes/cad_icassp_2026/baseline/contractions.csv
+batch: 1
+n_batches: 1
+
+reference: processed
