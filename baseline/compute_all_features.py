@@ -2,7 +2,7 @@
 Compute multiple feature sets for the Cadenza CLIP challenge:
 1. Legacy Text: Whisper Correctness, Semantic Sim, NLI
 2. Acoustic/Spectral: MFCCs, Spectral Contrast, etc.
-3. Hearing-Loss Metrics: STOI, HASPI, HAAQI, PESQ
+3. Hearing-Loss Metrics: STOI, PESQ
 4. Phoneme-Level: Phonological distance (panphon)
 5. ASR Embeddings: Whisper encoder and wav2vec2 hidden states
 6. Optional: LLM-based ASR correction
@@ -89,6 +89,63 @@ except ImportError:
     HAVE_PESQ = False
     logging.warning("pesq not found. Skipping PESQ feature.")
 # ---
+
+# Demucs (source separation)
+try:
+    import torch.hub
+    HAVE_DEMUCS = True
+except Exception:
+    HAVE_DEMUCS = False
+    logging.warning("Demucs not available (torch.hub load failed). Skipping vocal-based metrics.")
+
+def separate_vocals_demucs(
+    signal_stereo: np.ndarray,
+    sr: int,
+    model: torch.nn.Module,
+    device: torch.device,
+    target_sr: int,
+) -> np.ndarray:
+    """
+    Separate vocals using HTDemucs and return a mono vocals track resampled to target_sr.
+    signal_stereo: shape (N, 2), float32
+    sr: current sample rate (can be 16k)
+    model: Demucs model, expects 44.1kHz
+    device: torch device
+    target_sr: the desired output sample rate (e.g., 16000)
+    """
+    if signal_stereo.ndim == 1:
+        signal_stereo = np.stack([signal_stereo, signal_stereo], axis=1)
+    assert signal_stereo.shape[1] == 2, "Demucs requires stereo input."
+
+    # Resample to 44100 for Demucs
+    demucs_sr = 44100
+    if sr != demucs_sr:
+        x_lr = librosa.resample(signal_stereo.T, orig_sr=sr, target_sr=demucs_sr, axis=1)  # (2, T)
+    else:
+        x_lr = signal_stereo.T  # (2, T)
+
+    # To tensor [1, C, T]
+    x = torch.from_numpy(x_lr).float().unsqueeze(0).to(device)
+
+    model.eval()
+    with torch.no_grad():
+        # Forward returns [B, S, C, T]
+        sources = model(x)
+    # Find vocals index
+    if hasattr(model, "sources") and "vocals" in model.sources:
+        v_idx = model.sources.index("vocals")
+    else:
+        # Fallback: assume last source is vocals (common for Demucs variants)
+        v_idx = -1
+    vocals = sources[0, v_idx]  # [C, T]
+    vocals_np = vocals.detach().cpu().numpy().T  # (T, 2)
+
+    # Resample back to target_sr and mono-ize
+    if demucs_sr != target_sr:
+        vocals_np = librosa.resample(vocals_np.T, orig_sr=demucs_sr, target_sr=target_sr, axis=1).T  # (T, 2)
+    vocals_mono = vocals_np.mean(axis=1).astype(np.float32)
+    return vocals_mono
+
 
 def resample_audio(audio: np.ndarray, orig_sr: int, target_sr: int = 16000) -> np.ndarray:
     """
@@ -430,23 +487,6 @@ def compute_all_features_for_signal(
     # else:
     #     # features["fwSNRseg"] = 0.0
 
-    # ========================================================================
-    # STEP 10: PESQ (No resampling needed - already at 16kHz!)
-    # ========================================================================
-    if HAVE_PESQ:
-        try:
-            # We're already at 16kHz, so no resampling needed!
-            features["pesq_wb"] = float(
-                pesq.pesq(sample_rate, reference_signal_mono, mono_signal, "wb")
-            )
-            # features["pesq_nb"] = 0.0  # Not applicable for 16kHz
-        except (PesqError, Exception) as e:
-            logger.warning(f"PESQ failed for {record['signal']}: {e}")
-            features["pesq_wb"] = 0.0
-            # features["pesq_nb"] = 0.0
-    else:
-        features["pesq_wb"] = 0.0
-        # features["pesq_nb"] = 0.0
 
     # ========================================================================
     # STEP 11: PREPARE STEREO SIGNALS FOR HEARING LOSS METRICS
@@ -484,20 +524,71 @@ def compute_all_features_for_signal(
         reference_signal_stereo = reference_signal
 
     # ========================================================================
+    # STEP 11.1: OPTIONAL VOCALS-ONLY STEMS WITH DEMUCS (for STOI/PESQ)
+    # ========================================================================
+    vocals_ref_mono = None
+    vocals_proc_mono = None
+    if models.get("demucs", None) is not None:
+        try:
+            demucs_model = models["demucs"]
+            # Separate vocals for both reference and processed stereo
+            vocals_ref_mono = separate_vocals_demucs(
+                reference_signal_stereo, sample_rate, demucs_model, demucs_model.device, sample_rate
+            )
+            vocals_proc_mono = separate_vocals_demucs(
+                processed_signal_stereo, sample_rate, demucs_model, demucs_model.device, sample_rate
+            )
+            # Trim to same length as earlier min_len, for safety
+            vmin = min(len(vocals_ref_mono), len(vocals_proc_mono))
+            vocals_ref_mono = vocals_ref_mono[:vmin]
+            vocals_proc_mono = vocals_proc_mono[:vmin]
+        except Exception as e:
+            logger.warning(f"Demucs vocal separation failed for {record['signal']}: {e}")
+            vocals_ref_mono, vocals_proc_mono = None, None
+
+    # ========================================================================
+    # STEP 10: PESQ (No resampling needed - already at 16kHz!)
+    # ========================================================================
+    if HAVE_PESQ:
+        try:
+            features["pesq_wb"] = float(
+                pesq.pesq(sample_rate, reference_signal_mono, mono_signal, "wb")
+            )
+        except (PesqError, Exception) as e:
+            logger.warning(f"PESQ failed for {record['signal']}: {e}")
+            features["pesq_wb"] = 0.0
+    else:
+        features["pesq_wb"] = 0.0
+
+    # NEW: PESQ on vocals-only stems if available (also wideband at 16k)
+    if HAVE_PESQ and (vocals_ref_mono is not None and vocals_proc_mono is not None):
+        try:
+            features["pesq_wb_vocals"] = float(
+                pesq.pesq(sample_rate, vocals_ref_mono, vocals_proc_mono, "wb")
+            )
+        except (PesqError, Exception) as e:
+            logger.warning(f"PESQ (vocals) failed for {record['signal']}: {e}")
+            features["pesq_wb_vocals"] = 0.0
+    else:
+        features["pesq_wb_vocals"] = 0.0
+    # ========================================================================
     # STEP 12: HEARING LOSS METRICS (STOI, HASPI, HAAQI)
     # ========================================================================
     audiogram_left = record["audiogram_left"]
     audiogram_right = record["audiogram_right"]
 
     # STOI
-    features["stoi"] = float(
-        stoi(
-            reference_signal_stereo[:, 0],
-            processed_signal_stereo[:, 0],
-            sample_rate,
-            extended=True,
-        )
-    )
+    if vocals_ref_mono is not None and vocals_proc_mono is not None:
+        try:
+            features["stoi_vocals"] = float(
+                stoi(vocals_ref_mono, vocals_proc_mono, sample_rate, extended=True)
+            )
+        except Exception as e:
+            logger.warning(f"STOI (vocals) failed for {record['signal']}: {e}")
+            features["stoi_vocals"] = 0.0
+    else:
+        features["stoi_vocals"] = 0.0
+
 
     # HASPI (Better-Ear) - Commented out in original, keeping commented
     # try:
@@ -699,6 +790,19 @@ def run_feature_extraction(
     # --- 3. Load Phoneme Helpers ---
     models["g2p"] = G2p()
     models["panphon_dist"] = Distance()
+
+        # --- 5. Optional: Load Demucs for vocal-based metrics ---
+    if HAVE_DEMUCS:
+        try:
+            logger.info("Loading Demucs (htdemucs) for vocal-based metrics...")
+            models["demucs"] = torch.hub.load("facebookresearch/demucs", "htdemucs").to(device).eval()
+            logger.info("Demucs loaded successfully.")
+        except Exception as e:
+            logger.warning(f"Failed to load Demucs: {e}. Vocal-based metrics will be skipped.")
+            models["demucs"] = None
+    else:
+        models["demucs"] = None
+
 
     # --- 4. NEW: Load Optional LLM ---
     if cfg.baseline.llm_correction.enabled:
@@ -916,7 +1020,7 @@ def run_compute_all_features(cfg: DictConfig) -> None:
     )
 
     results_file = Path(
-        f"{cfg.data.dataset}.{cfg.split}.{cfg.baseline.system}{batch_str}.jsonl"
+        f"{cfg.data.dataset}.{cfg.split}.{cfg.baseline.system}{batch_str}_updated.jsonl"
     )
     results = read_jsonl(str(results_file)) if results_file.exists() else []
     results_index = {result["signal"]: result for result in results}
