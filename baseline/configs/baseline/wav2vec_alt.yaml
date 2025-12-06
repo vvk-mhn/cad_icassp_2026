@@ -1,0 +1,14 @@
+name: wav2vec_alt
+system: wav2vec_alt
+
+
+model_name_or_path: /scratch/work/peterr2/baseline_code/models/wav2vec2-large-alt-finetuned
+# model_name_or_path: "facebook/wav2vec2-large-960h-lv60"
+# model_name_or_path: facebook/wav2vec2-base-960h
+
+# Use the robust hydra path for contractions file
+contractions_file: ${hydra:runtime.cwd}/recipes/cad_icassp_2026/baseline/contractions.csv
+
+batch: 1
+n_batches: 1
+reference: processed

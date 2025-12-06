@@ -1,0 +1,14 @@
+# conf/baseline/audio_flamingo_dual.yaml
+
+name: audio_flamingo_dual
+system: audio_flamingo_dual
+model_id: "nvidia/audio-flamingo-3-hf"
+
+# Batch size 1 is required for this logic
+batch: 1 
+n_batches: 1
+
+# This is the key that was missing/causing issues
+reference: processed
+
+output_jsonl: "audio_flamingo_dual.jsonl"

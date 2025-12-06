@@ -1,0 +1,36 @@
+# configs/baseline/multimodal_advanced.yaml
+name: multimodal_advanced
+system: multimodal_advanced
+
+# --- Models ---
+whisper_version: "base.en"
+wav2vec2_model: "facebook/wav2vec2-large-robust"
+wavlm_model: "microsoft/wavlm-base-plus"
+
+# --- Extraction Settings ---
+device: "cuda"
+batch: 1
+n_batches: 1
+embedding_dir_name: "embeddings_tensors"
+
+# --- Whisper Stability Settings ---
+n_samples: 30           # Number of stochastic runs for stability metrics
+temperature: 0.7       # Temperature for stochastic runs
+
+# --- Prediction Model Settings ---
+features_to_use: "all" # "all" includes the new non-intrusive ones
+vocal_gate_alpha: 1.0
+vocal_gate_snr0: 0.0
+run_shap: false
+
+reference: processed
+
+# --- Neural Network Hyperparameters ---
+nn:
+  epochs: 50
+  batch_size: 16       # Keep small for variable length tensors
+  lr: 1e-4
+  hidden_dim: 256
+  n_heads: 4
+  n_layers: 2
+  patience: 10

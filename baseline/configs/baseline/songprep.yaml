@@ -1,0 +1,11 @@
+name: songprep
+system: songprep_wer
+songprep_path: /scratch/work/peterr2/baseline_code/SongPrep
+contractions_file: ${hydra:runtime.cwd}/recipes/cad_icassp_2026/baseline/contractions.csv
+qwen_ckpt: SongPrep-7B/
+codec_ckpt: SongPrep-7B/mucodec.safetensors
+ssl_ckpt: SongPrep-7B/muencoder.pt
+vocal_file: conf/vocab_type.yaml  # <-- ADD THIS LINE
+batch: 1
+n_batches: 1
+reference: processed
