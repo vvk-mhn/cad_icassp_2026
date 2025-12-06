@@ -24,13 +24,16 @@ batch: 1
 n_batches: 1
 reference: processed
 
-model_type: "lgbm"       # "lgbm" or "catboost"
+model_type: "catboost"       # "lgbm" or "catboost"
 run_shap: true           # true or false
 
 # --- NEW: Gating Controls ---
 vocal_gate_alpha: 1.0    # Sigmoid slope
 vocal_gate_snr0: 0.0     # Sigmoid midpoint (in dB)
-
+dim_reduction:
+  run: False
+  
+nn_use_scalars: False
 
 mlp:
   num_epochs: 200
